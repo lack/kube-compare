@@ -19,13 +19,95 @@ type CapturegroupsInlineDiff struct {
 	diffs []diffmatchpatch.Diff
 }
 
-func isCapturegroup(pattern string) bool {
-	// TODO: Maybe be more exact?
-	return strings.HasPrefix(pattern, "(?<")
+// Return a list of the valid-looking capturegroup indices within the given pattern string.
+// Each inner list is a tuple of start:end indices that can be used to extract a capture group.
+// For example:
+//
+//	groups := CaptureGroupIndex(pattern)
+//	loc := groups[0]
+//	cg := pattern[loc[0],loc[1]]
+func CapturegroupIndex(pattern string) [][]int {
+	result := make([][]int, 0)
+	// The outer loop finds the beginning of the next named capturegroup
+	for i := 0; i < len(pattern); i++ {
+		idx := strings.Index(pattern[i:], "(?<")
+		if idx == -1 {
+			break
+		}
+		cStart := idx + i
+		i = cStart + 3
+		// Find the end of the capturegroup name
+	CgName:
+		for ; i < len(pattern); i++ {
+			switch pattern[i] {
+			case '\\':
+				// Escape next character
+				i++
+			case '>':
+				i++
+				break CgName
+			}
+		}
+		pDepth := 0
+		cDepth := 0
+		// Find the end of this capturegroup
+		for ; i < len(pattern); i++ {
+			switch pattern[i] {
+			case '\\':
+				// Escape next character
+				i++
+			case '(':
+				if cDepth > 0 {
+					continue
+				}
+				pDepth++
+			case ')':
+				if cDepth > 0 {
+					continue
+				}
+				pDepth--
+			case '[':
+				cDepth++
+			case ']':
+				cDepth--
+			}
+			if pDepth < 0 {
+				// Exited this capture group; record it
+				result = append(result, []int{cStart, i + 1})
+				break
+			}
+		}
+	}
+	return result
+}
+
+// Transforms all non-capturegroup text in the pattern via Regex.QuoteMeta(), reusing previously-computed group indices
+func CapturegroupQuoteMetaWithGroups(pattern string, groups [][]int) string {
+	results := []string{}
+	last := 0
+	for _, group := range groups {
+		if last < group[0] {
+			// Escape everything up to the capturegroup
+			results = append(results, regexp.QuoteMeta(pattern[last:group[0]]))
+		}
+		// Append the capturegroup verbatim
+		results = append(results, pattern[group[0]:group[1]])
+		last = group[1]
+	}
+	if last < len(pattern) {
+		// Escape everything after the last capturegroup
+		results = append(results, regexp.QuoteMeta(pattern[last:]))
+	}
+	return strings.Join(results, "")
+}
+
+// Transforms all non-capturegroup text in the pattern via Regex.QuoteMeta()
+func CapturegroupQuoteMeta(pattern string) string {
+	return CapturegroupQuoteMetaWithGroups(pattern, CapturegroupIndex(pattern))
 }
 
 // If reconciliation was possible, returns the reconciled text.
-// error is 'nil' only when reconciliation succeeds
+// A result of ("", nil) means there were no parsing errors, but the difference was not reconcilable
 func (id *CapturegroupsInlineDiff) reconcileViaRegex(deletion, insertion diffmatchpatch.Diff) (string, error) {
 	// Quick sanity check
 	if deletion.Type != diffmatchpatch.DiffDelete || insertion.Type != diffmatchpatch.DiffInsert {
@@ -35,27 +117,23 @@ func (id *CapturegroupsInlineDiff) reconcileViaRegex(deletion, insertion diffmat
 	// The delete side is always the pattern
 	pattern := deletion.Text
 	value := insertion.Text
-	// Ensure we're only working with capturegroups
-	if !isCapturegroup(pattern) {
-		// Not a capturegroup: No reconciliation possible
-		return "", fmt.Errorf("LHS %q is not a capturegroup", pattern)
-	}
 
-	// Compile the capturegroup and attempt to match it
-	re, err := regexp.Compile(pattern)
+	// Compile the capturegroup (quoting any adjacent non-capturegroup parts) and attempt to match it
+	re, err := regexp.Compile(CapturegroupQuoteMeta(pattern))
 	if err != nil {
 		// Note: Should not usually be possible, because of the 'validate' function below, but:
 		return "", fmt.Errorf("LHS %q regex compilation failed: %w", pattern, err)
 	}
-	if re.MatchString(value) {
+	if loc := re.FindStringIndex(value); loc != nil {
 		// TODO: Retain the matched capturegroup contents for later validation
 		// Regex match!  Return the reconciled string:
-		return value, nil
+		return value[loc[0]:loc[1]], nil
 	}
 	// Not an error, but it didn't match
 	return "", nil
 }
 
+// Perform the diff, ensuring the diff parts are on line-boundaries, and recording the parts in id.diffs
 func (id *CapturegroupsInlineDiff) doDiff(pattern, value string) {
 	id.dmp = diffmatchpatch.New()
 	diffs := id.dmp.DiffMain(pattern, value, false)
@@ -137,18 +215,18 @@ func (id CapturegroupsInlineDiff) Diff(pattern, value string) string {
 func (id CapturegroupsInlineDiff) Validate(pattern string) error {
 	var errs error
 	for i, line := range strings.Split(pattern, "\n") {
-		// For each line, look for capturegroup words and ensure they compile as regex
-		for j, word := range strings.Split(line, " ") {
-			// Note: Because we're splitting on line boundaries and spaces in
-			// these loops, this has a side-effect of enforcing that the
-			// capturegroup we're trying to compile here MUST NOT contain
-			// linebreaks or spaces (See note in the diffHelper function to
-			// learn why). (But the capture group CAN match spaces, with [\s] or similar)
-			if isCapturegroup(word) {
-				_, err := regexp.Compile(line)
-				if err != nil {
-					errs = errors.Join(errs, fmt.Errorf("Line %d word %d %w", i+1, j+1, err))
-				}
+		// Find all capturegroups in the line
+		groups := CapturegroupIndex(line)
+		// For each line, ensure our quoted capturegroup result is regex-compliant by compiling it
+		_, err := regexp.Compile(CapturegroupQuoteMetaWithGroups(line, groups))
+		if err != nil {
+			errs = errors.Join(errs, fmt.Errorf("Line %d %w", i+1, err))
+			continue
+		}
+		// Furthermore, ensure each capturegroup is valid for our purposes (ie, has no spaces)
+		for _, loc := range groups {
+			if strings.ContainsAny(line[loc[0]:loc[1]], " ") {
+				errs = errors.Join(errs, fmt.Errorf("Line %d:%d capturegroup contains spaces", i+1, loc[0]))
 			}
 		}
 	}

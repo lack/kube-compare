@@ -1,3 +1,3 @@
-error: reference contains template with config per field with InlineDiffFunc that fails validation. InlineDiffFunc: capturegroups. error: Line 2 word 7 error parsing regexp: invalid named capture: `(?<username[a-z0-9]+) would put in their own name. (?<username>`
-Line 2 word 14 error parsing regexp: invalid named capture: `(?<username[a-z0-9]+) would put in their own name. (?<username>`
+error: reference contains template with config per field with InlineDiffFunc that fails validation. InlineDiffFunc: capturegroups. error: Line 2 error parsing regexp: invalid named capture: `(?<username[a-z0-9]+) would put in their own name. (?<username>`
+Line 3:18 capturegroup contains spaces
 error code:2
