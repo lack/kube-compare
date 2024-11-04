@@ -51,8 +51,11 @@ func TestCapturegroupQuoteMeta(t *testing.T) {
 		{"", ""},
 		{"plain text", "plain text"},
 		{"[a-z]+(looks)?(like)?(regex)?", "\\[a-z\\]\\+\\(looks\\)\\?\\(like\\)\\?\\(regex\\)\\?"},
-		{"(?<simple_group>.*)", "(?<simple_group>.*)"},
+		{"(?<simple_group>.*)", "^(?<simple_group>.*)$"},
 		{"[(?<group_in_brackets>[^\\]]+)]", "\\[(?<group_in_brackets>[^\\]]+)\\]"},
+		{" (?<simple_group>.*)", " \\b(?<simple_group>.*)$"},
+		{"(?<simple_group>.*) ", "^(?<simple_group>.*)\\b "},
+		{"Text around a (?<simple_group>.*) with another (?<end_group>.*)", "Text around a \\b(?<simple_group>.*)\\b with another \\b(?<end_group>.*)$"},
 	}
 	for _, c := range tests {
 		actual := CapturegroupQuoteMeta(c.pattern)
@@ -112,17 +115,16 @@ func TestCapturegroupsDiff(t *testing.T) {
 		},
 		{
 			message: "One capturegroup",
-			// TODO: Remove need for word boundaries
-			pattern: []string{"one", "(?<g1>\\b[a-z]+\\b)", "three"},
+			pattern: []string{"one", "(?<g1>[a-z]+)", "three"},
 			cases: []Case{
 				{
 					message:  "empty value",
-					expected: []string{"one", "(?<g1>\\b[a-z]+\\b)", "three"},
+					expected: []string{"one", "(?<g1>[a-z]+)", "three"},
 				},
 				{
 					message:  "mismatches pattern",
 					value:    []string{"one", "2two2", "three"},
-					expected: []string{"one", "(?<g1>\\b[a-z]+\\b)", "three"},
+					expected: []string{"one", "(?<g1>[a-z]+)", "three"},
 				},
 				{
 					message:  "matching pattern",
@@ -133,21 +135,74 @@ func TestCapturegroupsDiff(t *testing.T) {
 		},
 		{
 			message: "One capturegroup allowing spaces",
-			pattern: []string{"one", "(?<g1>\\b[a-z\\s]+\\b)", "three"},
+			pattern: []string{"one", "(?<g1>[a-z\\s]+)", "three"},
 			cases: []Case{
 				{
 					message:  "empty value",
-					expected: []string{"one", "(?<g1>\\b[a-z\\s]+\\b)", "three"},
+					expected: []string{"one", "(?<g1>[a-z\\s]+)", "three"},
 				},
 				{
 					message:  "mismatches pattern",
 					value:    []string{"one", "2two2", "three"},
-					expected: []string{"one", "(?<g1>\\b[a-z\\s]+\\b)", "three"},
+					expected: []string{"one", "(?<g1>[a-z\\s]+)", "three"},
 				},
 				{
 					message:  "matching pattern",
 					value:    []string{"one", "two point five", "three"},
 					expected: []string{"one", "two point five", "three"},
+				},
+			},
+		},
+		{
+			message: "Two different capturegroups",
+			pattern: []string{"Line one", "Line (?<g1>[a-z\\s]+) two (?<g2>[a-z]+)", "Line three"},
+			cases: []Case{
+				{
+					message:  "empty value",
+					expected: []string{"Line one", "Line (?<g1>[a-z\\s]+) two (?<g2>[a-z]+)", "Line three"},
+				},
+				{
+					message:  "mismatches pattern",
+					value:    []string{"one", "two", "three"},
+					expected: []string{"Line one", "Line (?<g1>[a-z\\s]+) two (?<g2>[a-z]+)", "Line three"},
+				},
+				{
+					message:  "mismatches only regexes",
+					value:    []string{"Line one", "Line two", "Line three"},
+					expected: []string{"Line one", "Line (?<g1>[a-z\\s]+) two (?<g2>[a-z]+)", "Line three"},
+				},
+				{
+					message: "mismatches 1/2 pattern",
+					value:   []string{"Line one", "Line a two 42", "Line three"},
+					// TODO: Perhaps we could engineer a way to match the first 'a'?
+					expected: []string{"Line one", "Line (?<g1>[a-z\\s]+) two (?<g2>[a-z]+)", "Line three"},
+				},
+				{
+					message:  "matching pattern",
+					value:    []string{"Line one", "Line a two b", "Line three"},
+					expected: []string{"Line one", "Line a two b", "Line three"},
+				},
+				{
+					message:  "matching pattern with spaces",
+					value:    []string{"Line one", "Line a a a two b", "Line three"},
+					expected: []string{"Line one", "Line a a a two b", "Line three"},
+				},
+			},
+		},
+		{
+			message: "Two identical capturegroups",
+			pattern: []string{"Line one", "Line (?<g1>[a-z\\s]+) two (?<g1>[a-z\\s]+)", "Line (?<g1>[a-z\\s]+)"},
+			cases: []Case{
+				{
+					message:  "matching pattern identically",
+					value:    []string{"Line one", "Line a a two a a", "Line a a"},
+					expected: []string{"Line one", "Line a a two a a", "Line a a"},
+				},
+				{
+					// TODO: Can we enforce that the same named group is identical everywhere?
+					message:  "matching pattern differently each time",
+					value:    []string{"Line one", "Line a a two b", "Line three"},
+					expected: []string{"Line one", "Line a a two b", "Line three"},
 				},
 			},
 		},

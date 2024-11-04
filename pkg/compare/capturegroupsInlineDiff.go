@@ -19,6 +19,16 @@ type CapturegroupsInlineDiff struct {
 	diffs []diffmatchpatch.Diff
 }
 
+// Options for development purposes to test alternative implementations
+
+// If true, use a line-granular diff.
+// Otherwise, do a word-granular diff.
+var diffByLines = false
+
+// If true, add string-end anchors to the entire pattern when quoted.
+// Otherwise only do so when a capture group begins or ends the string.
+var quoteEscapeFull = false
+
 // Return a list of the valid-looking capturegroup indices within the given pattern string.
 // Each inner list is a tuple of start:end indices that can be used to extract a capture group.
 // For example:
@@ -82,21 +92,46 @@ func CapturegroupIndex(pattern string) [][]int {
 }
 
 // Transforms all non-capturegroup text in the pattern via Regex.QuoteMeta(), reusing previously-computed group indices
+// Additionally this will add appropriate word or end-of-string anchors to
+// capturegroups and/or the whole pattern according to the global
+// 'quoteEscapeFull' option
 func CapturegroupQuoteMetaWithGroups(pattern string, groups [][]int) string {
-	results := []string{}
+	results := make([]string, 0, len(groups)*2)
 	last := 0
+	if quoteEscapeFull {
+		results = append(results, "^")
+	}
 	for _, group := range groups {
 		if last < group[0] {
 			// Escape everything up to the capturegroup
 			results = append(results, regexp.QuoteMeta(pattern[last:group[0]]))
 		}
+		if group[0] == 0 && !quoteEscapeFull {
+			// If the capturegroup begins the string, prepend a start-string anchor
+			results = append(results, "^")
+		}
+		if group[0] > 0 && pattern[group[0]-1] == ' ' {
+			// If the capturegroup is after a space, prepend a start-word anchor
+			results = append(results, "\\b")
+		}
 		// Append the capturegroup verbatim
 		results = append(results, pattern[group[0]:group[1]])
+		if group[1] == len(pattern) && !quoteEscapeFull {
+			// If the capturegroup ends the string, append an end-string anchor
+			results = append(results, "$")
+		}
+		if group[1] < len(pattern) && pattern[group[1]] == ' ' {
+			// If the capturegroup is followed by a space, append an end-word anchor
+			results = append(results, "\\b")
+		}
 		last = group[1]
 	}
 	if last < len(pattern) {
 		// Escape everything after the last capturegroup
 		results = append(results, regexp.QuoteMeta(pattern[last:]))
+	}
+	if quoteEscapeFull {
+		results = append(results, "$")
 	}
 	return strings.Join(results, "")
 }
@@ -118,8 +153,10 @@ func (id *CapturegroupsInlineDiff) reconcileViaRegex(deletion, insertion diffmat
 	pattern := deletion.Text
 	value := insertion.Text
 
+	quotedPattern := CapturegroupQuoteMeta(pattern)
+
 	// Compile the capturegroup (quoting any adjacent non-capturegroup parts) and attempt to match it
-	re, err := regexp.Compile(CapturegroupQuoteMeta(pattern))
+	re, err := regexp.Compile(quotedPattern)
 	if err != nil {
 		// Note: Should not usually be possible, because of the 'validate' function below, but:
 		return "", fmt.Errorf("LHS %q regex compilation failed: %w", pattern, err)
@@ -133,13 +170,25 @@ func (id *CapturegroupsInlineDiff) reconcileViaRegex(deletion, insertion diffmat
 	return "", nil
 }
 
-// Perform the diff, ensuring the diff parts are on line-boundaries, and recording the parts in id.diffs
-func (id *CapturegroupsInlineDiff) doDiff(pattern, value string) {
+// Perform the diff, ensuring the diff parts are on word-boundaries, and recording the parts in id.diffs
+func (id *CapturegroupsInlineDiff) doWordDiff(pattern, value string) {
 	id.dmp = diffmatchpatch.New()
 	diffs := id.dmp.DiffMain(pattern, value, false)
-	// TODO: Need a custom cleanup that preserves full capture groups, not just wordbreaks
-	// Until then, we enforce (in the 'validate' function below) that capturegroups must NOT contain spaces or linebreaks)
+	// Note: This DiffCleanupSemantic logic will ensure we don't split any
+	// capture groups into peices provided there is no space in any of them
+	// (which is why we enforce this in 'Validate' below)
+	// TODO: If we implemented an alternative to this that respected full
+	// capture groups and not just word boundaries, that would allow spaces in
+	// capture groups.
 	id.diffs = id.dmp.DiffCleanupSemantic(diffs)
+}
+
+// Perform the diff, ensuring the diff parts are on line-boundaries, and recording the parts in id.diffs
+func (id *CapturegroupsInlineDiff) doLineDiff(pattern, value string) {
+	id.dmp = diffmatchpatch.New()
+	patternLines, valueLines, lineStrings := id.dmp.DiffLinesToChars(pattern, value)
+	diffs := id.dmp.DiffMain(patternLines, valueLines, true)
+	id.diffs = id.dmp.DiffCharsToLines(diffs, lineStrings)
 }
 
 // Return the potentially-reconcilable diff pair to id.diffs[i] (ie, if
@@ -162,13 +211,18 @@ func (id *CapturegroupsInlineDiff) reconcilableDiffPair(i int) (*diffmatchpatch.
 
 // Main entrypoint called by compare.go
 func (id CapturegroupsInlineDiff) Diff(pattern, value string) string {
-	// First do a word-wise diff to isolate only those whole words that differ
-	id.doDiff(pattern, value)
-	results := make([]string, 0, len(id.diffs))
+	if diffByLines {
+		id.doLineDiff(pattern, value)
+	} else {
+		// First do a word-wise diff to isolate only those whole words that differ
+		id.doWordDiff(pattern, value)
+	}
+
 	// Then try to reconcile the diffs by treating any insert-then-delete or
 	// delete-then-insert as a possible regex pair.  The goal is to render the
 	// "pattern" side of the diff with any capture-groups replaced with
 	// equivalent matches from the "value" side
+	results := make([]string, 0, len(id.diffs))
 	for i := 0; i < len(id.diffs); i++ {
 		diff := id.diffs[i]
 		switch diff.Type {
