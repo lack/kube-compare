@@ -203,9 +203,14 @@ func TestCapturegroupsDiff(t *testing.T) {
 				},
 				{
 					// TODO: Can we enforce that the same named group is identical everywhere?
-					message:  "matching pattern differently each time",
-					value:    []string{"Line one", "Line a a two b", "Line three"},
-					expected: []string{"Line one", "Line a a two b", "Line three"},
+					message: "matching pattern differently each time",
+					value:   []string{"Line one", "Line a a two b", "Line three"},
+					expected: []string{"Line one", "Line a a two b", "Line three",
+						"WARNING: Capturegroup (?<g1>...) matched multiple values:",
+						"  a a (1 occurrences)",
+						"  b (1 occurrences)",
+						"  three (1 occurrences)",
+					},
 				},
 			},
 		},

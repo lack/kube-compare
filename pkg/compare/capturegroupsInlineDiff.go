@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/sergi/go-diff/diffmatchpatch"
@@ -17,6 +18,24 @@ const (
 type CapturegroupsInlineDiff struct {
 	dmp   *diffmatchpatch.DiffMatchPatch
 	diffs []diffmatchpatch.Diff
+	caps  map[string][]string
+}
+
+func (id *CapturegroupsInlineDiff) addCapture(name, value string) {
+	if id.caps == nil {
+		id.caps = make(map[string][]string)
+	}
+	if !slices.Contains(id.caps[name], value) {
+		id.caps[name] = append(id.caps[name], value)
+	}
+}
+
+func (id *CapturegroupsInlineDiff) allMatches(name string) string {
+	values := id.caps[name]
+	if len(values) > 1 {
+		return fmt.Sprintf("«(?<%s>...)=%s»", name, strings.Join(values, "|"))
+	}
+	return values[0]
 }
 
 type CgInfo struct {
@@ -171,10 +190,18 @@ func (id *CapturegroupsInlineDiff) reconcileViaRegex(deletion, insertion diffmat
 		// Note: Should not usually be possible, because of the 'validate' function below, but:
 		return "", fmt.Errorf("template %q regex compilation failed: %w", pattern, err)
 	}
-	if loc := re.FindStringIndex(value); loc != nil {
-		// TODO: Retain the matched capturegroup contents for later validation
+	if matches := re.FindStringSubmatch(value); matches != nil {
+		for i, cgName := range re.SubexpNames() {
+			if i == 0 {
+				continue
+			}
+			if cgName == "" {
+				continue
+			}
+			id.addCapture(cgName, matches[i])
+		}
 		// Regex match!  Return the reconciled string:
-		return value[loc[0]:loc[1]], nil
+		return matches[0], nil
 	}
 	// Not an error, but it didn't match
 	return "", nil
@@ -269,6 +296,13 @@ func (id CapturegroupsInlineDiff) Diff(pattern, value string) string {
 			// Normally, insertions should NOT be rendered, because they are
 			// strings added by the "value" side and we want to showcase those
 			// as diffs at a higher level.
+		}
+	}
+
+	// Check for any capturegroups that have different match valueLines
+	for cgName, cgValues := range id.caps {
+		if len(cgValues) > 1 {
+			results = append(results, fmt.Sprintf("\nWARNING: Capturegroup (?<%s>...) matched multiple values: %s", cgName, id.allMatches(cgName)))
 		}
 	}
 
