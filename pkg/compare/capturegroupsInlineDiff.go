@@ -19,6 +19,12 @@ type CapturegroupsInlineDiff struct {
 	diffs []diffmatchpatch.Diff
 }
 
+type CgInfo struct {
+	Name  string
+	Start int
+	End   int
+}
+
 // Options for development purposes to test alternative implementations
 
 // If true, use a line-granular diff.
@@ -36,16 +42,18 @@ var quoteEscapeFull = false
 //	groups := CaptureGroupIndex(pattern)
 //	loc := groups[0]
 //	cg := pattern[loc[0],loc[1]]
-func CapturegroupIndex(pattern string) [][]int {
-	result := make([][]int, 0)
+func CapturegroupIndex(pattern string) []CgInfo {
+	result := make([]CgInfo, 0)
 	// The outer loop finds the beginning of the next named capturegroup
 	for i := 0; i < len(pattern); i++ {
 		idx := strings.Index(pattern[i:], "(?<")
 		if idx == -1 {
 			break
 		}
-		cStart := idx + i
-		i = cStart + 3
+		cg := CgInfo{
+			Start: idx + i,
+		}
+		i = cg.Start + 3
 		// Find the end of the capturegroup name
 	CgName:
 		for ; i < len(pattern); i++ {
@@ -54,6 +62,7 @@ func CapturegroupIndex(pattern string) [][]int {
 				// Escape next character
 				i++
 			case '>':
+				cg.Name = pattern[(cg.Start + 3):i]
 				i++
 				break CgName
 			}
@@ -83,7 +92,8 @@ func CapturegroupIndex(pattern string) [][]int {
 			}
 			if pDepth < 0 {
 				// Exited this capture group; record it
-				result = append(result, []int{cStart, i + 1})
+				cg.End = i + 1
+				result = append(result, cg)
 				break
 			}
 		}
@@ -95,36 +105,36 @@ func CapturegroupIndex(pattern string) [][]int {
 // Additionally this will add appropriate word or end-of-string anchors to
 // capturegroups and/or the whole pattern according to the global
 // 'quoteEscapeFull' option
-func CapturegroupQuoteMetaWithGroups(pattern string, groups [][]int) string {
+func CapturegroupQuoteMetaWithGroups(pattern string, groups []CgInfo) string {
 	results := make([]string, 0, len(groups)*2)
 	last := 0
 	if quoteEscapeFull {
 		results = append(results, "^")
 	}
 	for _, group := range groups {
-		if last < group[0] {
+		if last < group.Start {
 			// Escape everything up to the capturegroup
-			results = append(results, regexp.QuoteMeta(pattern[last:group[0]]))
+			results = append(results, regexp.QuoteMeta(pattern[last:group.Start]))
 		}
-		if group[0] == 0 && !quoteEscapeFull {
+		if group.Start == 0 && !quoteEscapeFull {
 			// If the capturegroup begins the string, prepend a start-string anchor
 			results = append(results, "^")
 		}
-		if group[0] > 0 && pattern[group[0]-1] == ' ' {
+		if group.Start > 0 && pattern[group.Start-1] == ' ' {
 			// If the capturegroup is after a space, prepend a start-word anchor
 			results = append(results, "\\b")
 		}
 		// Append the capturegroup verbatim
-		results = append(results, pattern[group[0]:group[1]])
-		if group[1] == len(pattern) && !quoteEscapeFull {
+		results = append(results, pattern[group.Start:group.End])
+		if group.End == len(pattern) && !quoteEscapeFull {
 			// If the capturegroup ends the string, append an end-string anchor
 			results = append(results, "$")
 		}
-		if group[1] < len(pattern) && pattern[group[1]] == ' ' {
+		if group.End < len(pattern) && pattern[group.End] == ' ' {
 			// If the capturegroup is followed by a space, append an end-word anchor
 			results = append(results, "\\b")
 		}
-		last = group[1]
+		last = group.End
 	}
 	if last < len(pattern) {
 		// Escape everything after the last capturegroup
@@ -278,9 +288,9 @@ func (id CapturegroupsInlineDiff) Validate(pattern string) error {
 			continue
 		}
 		// Furthermore, ensure each capturegroup is valid for our purposes (ie, has no spaces)
-		for _, loc := range groups {
-			if strings.ContainsAny(line[loc[0]:loc[1]], " ") {
-				errs = errors.Join(errs, fmt.Errorf("line %d:%d capturegroup contains spaces", i+1, loc[0]))
+		for _, group := range groups {
+			if strings.ContainsAny(line[group.Start:group.End], " ") {
+				errs = errors.Join(errs, fmt.Errorf("line %d:%d capturegroup contains spaces", i+1, group.Start))
 			}
 		}
 	}

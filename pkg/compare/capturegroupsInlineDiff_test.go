@@ -38,7 +38,10 @@ func TestCapturegroupIndex(t *testing.T) {
 		}
 		for i, m := range matches {
 			expected := c.expected[i]
-			assert.Equal(t, expected, c.pattern[m[0]:m[1]], fmt.Sprintf("Expected capture group %d", i))
+			assert.Equal(t, expected, c.pattern[m.Start:m.End], fmt.Sprintf("Expected capture group %d", i))
+			nameEnd := strings.Index(expected, ">")
+			expectedName := expected[3:nameEnd]
+			assert.Equal(t, expectedName, m.Name, fmt.Sprintf("Expected capture group %d name match", i))
 		}
 	}
 }
