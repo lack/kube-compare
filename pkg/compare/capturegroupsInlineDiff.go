@@ -159,7 +159,7 @@ func (id *CapturegroupsInlineDiff) reconcileViaRegex(deletion, insertion diffmat
 	re, err := regexp.Compile(quotedPattern)
 	if err != nil {
 		// Note: Should not usually be possible, because of the 'validate' function below, but:
-		return "", fmt.Errorf("LHS %q regex compilation failed: %w", pattern, err)
+		return "", fmt.Errorf("template %q regex compilation failed: %w", pattern, err)
 	}
 	if loc := re.FindStringIndex(value); loc != nil {
 		// TODO: Retain the matched capturegroup contents for later validation
@@ -237,7 +237,7 @@ func (id CapturegroupsInlineDiff) Diff(pattern, value string) string {
 				if err != nil {
 					klog.Warningf("capturegroup error: %s", err)
 					// Errors are intentionally nonfatal at this time.
-					// Preferrably these would be caught in the 'validate'
+					// Preferably these would be caught in the 'validate'
 					// function below.
 				}
 				if reconciled != "" {
@@ -251,7 +251,7 @@ func (id CapturegroupsInlineDiff) Diff(pattern, value string) string {
 			}
 			if diff.Type == diffmatchpatch.DiffDelete {
 				// Normally, deletions should be rendered as-is, because they are
-				// strings in the "pattern" side that were ommitted by the "value"
+				// strings in the "pattern" side that were omitted by the "value"
 				// side, and we want to showcase those as diffs at a higher level.
 				// Simple deletion: preserve the "pattern" side
 				results = append(results, diff.Text)
@@ -274,13 +274,13 @@ func (id CapturegroupsInlineDiff) Validate(pattern string) error {
 		// For each line, ensure our quoted capturegroup result is regex-compliant by compiling it
 		_, err := regexp.Compile(CapturegroupQuoteMetaWithGroups(line, groups))
 		if err != nil {
-			errs = errors.Join(errs, fmt.Errorf("Line %d %w", i+1, err))
+			errs = errors.Join(errs, fmt.Errorf("line %d %w", i+1, err))
 			continue
 		}
 		// Furthermore, ensure each capturegroup is valid for our purposes (ie, has no spaces)
 		for _, loc := range groups {
 			if strings.ContainsAny(line[loc[0]:loc[1]], " ") {
-				errs = errors.Join(errs, fmt.Errorf("Line %d:%d capturegroup contains spaces", i+1, loc[0]))
+				errs = errors.Join(errs, fmt.Errorf("line %d:%d capturegroup contains spaces", i+1, loc[0]))
 			}
 		}
 	}
