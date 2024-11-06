@@ -182,7 +182,8 @@ func (id *CapturegroupsInlineDiff) reconcileViaRegex(deletion, insertion diffmat
 	pattern := deletion.Text
 	value := insertion.Text
 
-	quotedPattern := CapturegroupQuoteMeta(pattern)
+	groups := CapturegroupIndex(pattern)
+	quotedPattern := CapturegroupQuoteMetaWithGroups(pattern, groups)
 
 	// Compile the capturegroup (quoting any adjacent non-capturegroup parts) and attempt to match it
 	re, err := regexp.Compile(quotedPattern)
@@ -191,6 +192,8 @@ func (id *CapturegroupsInlineDiff) reconcileViaRegex(deletion, insertion diffmat
 		return "", fmt.Errorf("template %q regex compilation failed: %w", pattern, err)
 	}
 	if matches := re.FindStringSubmatch(value); matches != nil {
+		reconciledString := ""
+		j := 0
 		for i, cgName := range re.SubexpNames() {
 			if i == 0 {
 				continue
@@ -199,9 +202,18 @@ func (id *CapturegroupsInlineDiff) reconcileViaRegex(deletion, insertion diffmat
 				continue
 			}
 			id.addCapture(cgName, matches[i])
+			group := groups[i-1]
+			if j < group.Start {
+				reconciledString += pattern[j:group.Start]
+			}
+			reconciledString += id.allMatches(cgName)
+			j = group.End
+		}
+		if j < len(pattern) {
+			reconciledString += pattern[j:]
 		}
 		// Regex match!  Return the reconciled string:
-		return matches[0], nil
+		return reconciledString, nil
 	}
 	// Not an error, but it didn't match
 	return "", nil
