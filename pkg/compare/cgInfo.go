@@ -1,6 +1,11 @@
 package compare
 
-import "strings"
+import (
+	"fmt"
+	"regexp"
+	"slices"
+	"strings"
+)
 
 // CgInfo helps record each named capturegroup in a regular expression
 type CgInfo struct {
@@ -73,4 +78,31 @@ func CapturegroupIndex(pattern string) []CgInfo {
 		}
 	}
 	return result
+}
+
+type CgMatches map[string][]string
+
+// Returns the full matching pattern and the related CgMatches structure, appending to the given previous capture list, if given
+// Returns: captures, fullmatch, err
+func AppendCgMatches(captures CgMatches, pattern, value string) (CgMatches, string, error) {
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return captures, "", fmt.Errorf("%q regex compilation failed: %w", pattern, err)
+	}
+	if matches := re.FindStringSubmatch(value); matches != nil {
+		if captures == nil {
+			captures = make(map[string][]string)
+		}
+		// Record all named subgroups
+		for i, cgName := range re.SubexpNames() {
+			if i == 0 || cgName == "" {
+				continue
+			}
+			if !slices.Contains(captures[cgName], matches[i]) {
+				captures[cgName] = append(captures[cgName], matches[i])
+			}
+		}
+		return captures, matches[0], nil
+	}
+	return captures, "", nil
 }

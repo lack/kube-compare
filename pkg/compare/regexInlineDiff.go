@@ -16,7 +16,12 @@ func (id RegexInlineDiff) Diff(regex, crValue string) string {
 	if err != nil {
 		return regex
 	}
-	if re.MatchString(crValue) {
+	if matches := re.FindStringSubmatch(crValue); matches != nil {
+		for i, cgName := range re.SubexpNames() {
+			if i == 0 || cgName == "" {
+				continue
+			}
+		}
 		return crValue
 	}
 	return regex
