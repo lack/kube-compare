@@ -212,10 +212,9 @@ func (id CapturegroupsInlineDiff) Diff(pattern, value string) string {
 
 	// And for clarity, highlight any capturegroups that had different values
 	// matched at different points
-	for cgName, cgValues := range cgMatches {
-		if len(cgValues) > 1 {
-			reconciledString += fmt.Sprintf("\nWARNING: Capturegroup (?<%s>…) matched multiple values: « %s »", cgName, strings.Join(cgValues, " | "))
-		}
+	warnings := CgWarnings(cgMatches)
+	if len(warnings) > 0 {
+		reconciledString += "\n" + strings.Join(warnings, "\n")
 	}
 
 	return reconciledString

@@ -3,6 +3,7 @@ package compare
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 const (
@@ -12,19 +13,16 @@ const (
 type RegexInlineDiff struct{}
 
 func (id RegexInlineDiff) Diff(regex, crValue string) string {
-	re, err := regexp.Compile(regex)
-	if err != nil {
+	cgMatches, fullMatch, err := AppendCgMatches(nil, regex, crValue)
+	if err != nil || fullMatch == "" {
 		return regex
 	}
-	if matches := re.FindStringSubmatch(crValue); matches != nil {
-		for i, cgName := range re.SubexpNames() {
-			if i == 0 || cgName == "" {
-				continue
-			}
-		}
-		return crValue
+	result := fullMatch
+	warnings := CgWarnings(cgMatches)
+	if len(warnings) > 0 {
+		result += "\n" + strings.Join(warnings, "\n")
 	}
-	return regex
+	return result
 }
 
 func (id RegexInlineDiff) Validate(regex string) error {

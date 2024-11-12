@@ -106,3 +106,14 @@ func AppendCgMatches(captures CgMatches, pattern, value string) (CgMatches, stri
 	}
 	return captures, "", nil
 }
+
+func CgWarnings(matches CgMatches) []string {
+	result := make([]string, 0, len(matches))
+
+	for cgName, cgValues := range matches {
+		if len(cgValues) > 1 {
+			result = append(result, fmt.Sprintf("\nWARNING: Capturegroup (?<%s>…) matched multiple values: « %s »", cgName, strings.Join(cgValues, " | ")))
+		}
+	}
+	return result
+}
