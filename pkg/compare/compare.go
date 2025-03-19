@@ -164,6 +164,14 @@ func NewCmd(f kcmdutil.Factory, streams genericiooptions.IOStreams) *cobra.Comma
 		Long:                  compareLong,
 		Example:               example,
 		Run: func(cmd *cobra.Command, args []string) {
+			// Adjust klog to match '--verbose' flag
+			klogVerbosity := "0"
+			if options.verboseOutput {
+				klogVerbosity = "1"
+			}
+			flagSet := flag.NewFlagSet("test", flag.ExitOnError)
+			klog.InitFlags(flagSet)
+			_ = flagSet.Parse([]string{"--v", klogVerbosity})
 
 			// FIXME: Handle creation of temporary directory more gracefully. Right now,
 			// kcmdutil.CheckDiffErr calls os.exit(), which does not run defer statements.
@@ -393,7 +401,7 @@ func (o *Options) setupCorrelators() error {
 		correlators = append(correlators, manualCorrelator)
 	}
 
-	groupCorrelator, err := NewGroupCorrelator(defaultFieldGroups, o.templates, o.verboseOutput)
+	groupCorrelator, err := NewGroupCorrelator(defaultFieldGroups, o.templates)
 	if err != nil {
 		return err
 	}
@@ -422,7 +430,7 @@ func (o *Options) setupOverrideCorrelators() error {
 		correlators = append(correlators, manualOverrideCorrelator)
 	}
 
-	groupCorrelator, err := NewGroupCorrelator(defaultFieldGroups, o.userOverrides, o.verboseOutput)
+	groupCorrelator, err := NewGroupCorrelator(defaultFieldGroups, o.userOverrides)
 	if err != nil {
 		return err
 	}
@@ -703,15 +711,6 @@ func (o *Options) Run() error {
 		ContinueOnError().
 		Flatten().
 		Do()
-
-	// Adjust klog to match '--verbose' flag
-	klogVerbosity := "0"
-	if o.verboseOutput {
-		klogVerbosity = "1"
-	}
-	flagSet := flag.NewFlagSet("test", flag.ExitOnError)
-	klog.InitFlags(flagSet)
-	_ = flagSet.Parse([]string{"--v", klogVerbosity})
 
 	if err := r.Err(); err != nil {
 		return fmt.Errorf("failed to collect resources: %w", err)
