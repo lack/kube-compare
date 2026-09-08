@@ -33,3 +33,9 @@ available verification checks. Specifically:
 
 There is also a `make markdownlint` target to test Markdown files, but this
 requires `docker` or `podman` installed locally.
+
+## OCPBUGS CVE triage
+
+When reviewing CVE tickets for the `oc / cluster-compare` component, read and
+follow the harness-agnostic skill at
+[`.agents/skills/ocpbugs-cve-triage/SKILL.md`](.agents/skills/ocpbugs-cve-triage/SKILL.md).

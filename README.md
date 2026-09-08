@@ -184,3 +184,25 @@ See the included [test cases](pkg/compare/testdata/) for more examples of refere
 [Developer Intro](docs/dev.md)
 
 [Build Image](docs/image-build.md)
+
+## Skill: OCPBUGS CVE triage (harness-agnostic)
+
+This repository includes a reusable skill for repeatable CVE triage in OCPBUGS for the `oc / cluster-compare` component.
+
+Canonical project location (tooling-agnostic):
+- `.agents/skills/ocpbugs-cve-triage/SKILL.md`
+
+Pi discovers this project skill automatically from `.agents/skills/`.
+Other harnesses that support the Agent Skills convention can use the same path.
+
+The skill documents:
+- querying with `resolution IS EMPTY` to avoid missing newly created CVE issues,
+- mandatory EMBARGOED handling (presence-only reporting, no evaluation),
+- per-branch impact analysis on `upstream/release-x.y`, and
+- listing available VEX Justification reasons, recommending the best fit from the evidence, and requesting confirmation before closure;
+- direct Jira REST closure with explicit `resolution` + `VEX Justification` fields when false positives are confirmed.
+
+It also includes a helper script:
+- `.agents/skills/ocpbugs-cve-triage/scripts/close_with_vex.sh`
+- Example: `./.agents/skills/ocpbugs-cve-triage/scripts/close_with_vex.sh OCPBUGS-120868`
+- List configured VEX reasons: `./.agents/skills/ocpbugs-cve-triage/scripts/close_with_vex.sh --list-vex-options`
